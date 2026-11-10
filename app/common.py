@@ -1,0 +1,224 @@
+"""Shared loaders, constants and renderers for the Streamlit demo app."""
+from __future__ import annotations
+
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import streamlit as st
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+for p in (SRC, ROOT / "app"):
+    if str(p) not in sys.path:
+        sys.path.insert(0, str(p))
+
+from uaagent.agent import (                              # noqa: E402
+    KIND_LABEL,
+    MODE_LABEL,
+    explain,
+    format_value,
+)
+from uaagent.alerts import (                              # noqa: E402
+    energy_alerts,
+    marine_alerts,
+    marine_naive_alerts,
+)
+from uaagent.rag import KnowledgeBase                     # noqa: E402
+from uaagent.routing import MODE_DESCRIPTIONS, operator_load  # noqa: E402
+
+ART = ROOT / "artifacts"
+
+COLORS = {
+    "accent": "#FF7A1A",
+    "confirmed": "#E5484D",
+    "watch": "#F5A524",
+    "healthy": "#3DD68C",
+    "band": "rgba(77, 163, 255, 0.28)",
+    "band_line": "#4DA3FF",
+    "muted": "#8FA6BC",
+}
+
+FOOTER = (
+    "Research demo · University of Turku · public datasets (UCI naval "
+    "propulsion simulator; Open Power System Data, Finland) · knowledge-base "
+    "documents are synthetic · no Wärtsilä data used"
+)
+
+_STATE_COLOR = {"confirmed": COLORS["confirmed"], "watch": COLORS["watch"],
+                "normal": COLORS["healthy"]}
+
+
+# ---------------------------------------------------------------------------
+# Cached data access
+# ---------------------------------------------------------------------------
+
+@st.cache_data(show_spinner=False)
+def load_marine_voyage() -> pd.DataFrame:
+    return pd.read_csv(ART / "marine_voyage.csv")
+
+
+@st.cache_data(show_spinner=False)
+def load_marine_test() -> pd.DataFrame:
+    return pd.read_csv(ART / "marine_test.csv")
+
+
+@st.cache_data(show_spinner=False)
+def load_marine_metrics() -> dict:
+    return json.loads((ART / "marine_metrics.json").read_text())
+
+
+@st.cache_data(show_spinner=False)
+def load_energy_test() -> pd.DataFrame:
+    return pd.read_csv(ART / "energy_test.csv", parse_dates=["decision_time", "target_time"])
+
+
+@st.cache_data(show_spinner=False)
+def load_energy_metrics() -> dict:
+    return json.loads((ART / "energy_metrics.json").read_text())
+
+
+@st.cache_data(show_spinner=False)
+def load_cal_scores() -> dict:
+    npz = np.load(ART / "marine_cal_scores.npz")
+    return {k: npz[k] for k in npz.files}
+
+
+@st.cache_resource(show_spinner=False)
+def load_kb() -> KnowledgeBase:
+    return KnowledgeBase(ROOT / "kb")
+
+
+@st.cache_data(show_spinner=False)
+def get_marine_alerts() -> list[dict]:
+    return marine_alerts(load_marine_voyage(), load_marine_metrics())
+
+
+@st.cache_data(show_spinner=False)
+def get_naive_alerts() -> list[dict]:
+    return marine_naive_alerts(load_marine_voyage(), load_marine_metrics())
+
+
+def get_energy_alerts(df: pd.DataFrame) -> list[dict]:
+    return energy_alerts(df, load_energy_metrics())
+
+
+@st.cache_data(show_spinner=False)
+def explain_cached(alert: dict, mode: str):
+    return explain(alert, load_kb(), mode=mode)
+
+
+# ---------------------------------------------------------------------------
+# Render helpers
+# ---------------------------------------------------------------------------
+
+def chip(text: str, color: str) -> str:
+    return (
+        f'<span style="background:{color}22;border:1px solid {color};'
+        f'color:{color};padding:2px 10px;border-radius:12px;'
+        f'font-size:0.8rem;font-weight:600;white-space:nowrap">{text}</span>'
+    )
+
+
+def state_chip(state: str, label: str = "") -> str:
+    return chip(f"{label}{state.upper()}", _STATE_COLOR.get(state, COLORS["muted"]))
+
+
+def render_confidence(text: str) -> None:
+    st.markdown(
+        f'<div style="background:{COLORS["band"]};border-left:3px solid '
+        f'{COLORS["band_line"]};padding:10px 14px;border-radius:4px;'
+        f'font-size:1.0rem">{text}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_advisory(alert: dict, mode: str) -> None:
+    """Render a full Explanation for one alert."""
+    ex = explain_cached(alert, mode)
+    st.markdown(f"#### {ex.headline}")
+    render_confidence(ex.confidence_statement)
+    if ex.why:
+        st.markdown("**Why**")
+        for w in ex.why:
+            st.markdown(f"- {w}")
+    if ex.actions:
+        st.markdown("**Recommended actions**")
+        for i, a in enumerate(ex.actions, 1):
+            ids = ", ".join(a["source_ids"])
+            st.markdown(f"{i}. {a['text']} `[{ids}]`")
+    with st.expander("Sources", expanded=False):
+        for h in ex.sources:
+            st.markdown(
+                f"**{h.doc_id}** — {h.title} · *{h.section}* "
+                f"({h.doc_type}, score {h.score:.2f})"
+            )
+            st.caption(h.text[:600])
+    st.caption(
+        f"Generator: {ex.generator} · Mode: "
+        f"{MODE_LABEL.get(ex.mode, ex.mode)}"
+    )
+
+
+def ua_alert_label(a: dict) -> str:
+    kind = KIND_LABEL.get(a["kind"], a["kind"])
+    d = a["domain"]
+    est = format_value(a["estimate"], d)
+    lo, hi = format_value(a["lo"], d), format_value(a["hi"], d)
+    unit = f" {a['unit']}" if a["unit"] else ""
+    t = str(a["t"])
+    t = t[0].upper() + t[1:]
+    return f"{t} · {kind} · {est} [{lo}, {hi}]{unit}"
+
+
+def render_ua_feed(alerts: list[dict], step: int, key: str,
+                   max_items: int = 8) -> dict | None:
+    """UA alert feed; returns the alert selected for the advisory."""
+    shown = [a for a in alerts if a["step"] <= step][::-1][:max_items]
+    if not shown:
+        st.info("No uncertainty-aware alerts raised yet.")
+        return None
+    for a in shown:
+        col = _STATE_COLOR[a["state"]]
+        st.markdown(
+            f"<small>{chip(a['state'].upper(), col)} {ua_alert_label(a)}</small>",
+            unsafe_allow_html=True,
+        )
+    # Default to the latest alert; a manual pick survives until the next new
+    # alert arrives, then the selection snaps back to the newest.
+    latest = shown[0]["id"]
+    if st.session_state.get(f"{key}_latest") != latest:
+        st.session_state[f"{key}_latest"] = latest
+        st.session_state[key] = 0
+    sel = st.selectbox(
+        "Advisory for",
+        options=list(range(len(shown))),
+        format_func=lambda i: ua_alert_label(shown[i]),
+        key=key,
+    )
+    return shown[sel]
+
+
+def render_naive_feed(naive: list[dict], step: int, show_truth: bool) -> None:
+    shown = [a for a in naive if a["step"] <= step][::-1]
+    if not shown:
+        st.info("No conventional alarms raised yet.")
+        return
+    for a in shown[:8]:
+        kind = KIND_LABEL.get(a["kind"], a["kind"])
+        line = (
+            f"{chip('ALARM', COLORS['muted'])} Hour {a['step']} · {kind} · "
+            f"est {a['estimate']:.3f} < {a['threshold']}"
+        )
+        if show_truth:
+            line += (" · " + chip("FALSE ALARM", COLORS["confirmed"])
+                     if a["is_false"]
+                     else " · " + chip("TRUE", COLORS["healthy"]))
+        st.markdown(f"<small>{line}</small>", unsafe_allow_html=True)
+
+
+def footer() -> None:
+    st.divider()
+    st.caption(FOOTER)

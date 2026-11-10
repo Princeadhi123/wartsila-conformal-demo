@@ -1,0 +1,317 @@
+{
+  "alpha": 0.1,
+  "horizon_h": 3,
+  "unit_mw": 20.0,
+  "aci_gamma": 0.005,
+  "aci_window_h": 1440,
+  "confirm_level_one_sided": 0.85,
+  "n": {
+    "train": 26006,
+    "calibration": 8760,
+    "test": 15335
+  },
+  "periods": {
+    "train": "2015-2017",
+    "calibration": "2018",
+    "test": "2019-01-01 00:00:00+00:00 .. 2020-09-30 22:00:00+00:00"
+  },
+  "accuracy": {
+    "mae_model": 192.62376733641145,
+    "mae_persistence": 481.7198834822302,
+    "rmse_model": 261.4518520680467,
+    "mean_residual_load_mw": 8469.994090642322
+  },
+  "coverage": {
+    "raw_quantile_regression": 0.7670687968699055,
+    "split_constant_width": 0.8428431692207369,
+    "cqr_static": 0.8648190414085426,
+    "cqr_aci": 0.9001630257580697,
+    "upper95_one_sided": 0.9562438865340723
+  },
+  "mean_width_mw": {
+    "raw_quantile_regression": 682.4204906153174,
+    "split_constant_width": 698.8766535903123,
+    "cqr_static": 859.7321174798528,
+    "cqr_aci": 950.2114421821366
+  },
+  "worst_month_coverage": {
+    "coverage_raw": 0.6209677419354839,
+    "coverage_static": 0.728494623655914,
+    "coverage_aci": 0.8708333333333333
+  },
+  "rolling30d_coverage_min": {
+    "raw": 0.5986111111111111,
+    "static": 0.6888888888888889,
+    "aci": 0.8430555555555556
+  },
+  "calibration_curve": [
+    {
+      "nominal": 0.95,
+      "cqr_static": 0.9218780567329639
+    },
+    {
+      "nominal": 0.9,
+      "cqr_static": 0.8648190414085426
+    },
+    {
+      "nominal": 0.85,
+      "cqr_static": 0.8162373655037496
+    },
+    {
+      "nominal": 0.8,
+      "cqr_static": 0.7736550374959243
+    },
+    {
+      "nominal": 0.7,
+      "cqr_static": 0.6787088359960873
+    },
+    {
+      "nominal": 0.6,
+      "cqr_static": 0.579654385392892
+    },
+    {
+      "nominal": 0.5,
+      "cqr_static": 0.4864688620802087
+    }
+  ],
+  "reserve": {
+    "static_reserve_mw": 278.6817164837325,
+    "fixed_rule": {
+      "mean_reserve_mw": 278.68171648373254,
+      "shortfall_frequency": 0.05255950440169547,
+      "mean_shortfall_mw_when_short": 122.98349810854553,
+      "p99_shortfall_mw": 208.9732190611148,
+      "max_shortfall_mw": 857.8528820307129
+    },
+    "conformal_dynamic": {
+      "mean_reserve_mw": 396.10477812587715,
+      "shortfall_frequency": 0.043756113465927615,
+      "mean_shortfall_mw_when_short": 104.90220200939333,
+      "p99_shortfall_mw": 141.35676079627248,
+      "max_shortfall_mw": 898.3745060810816
+    },
+    "fixed_rule_matched_to_dynamic_shortfall": {
+      "reserve_mw": 299.1839091587896,
+      "mean_reserve_mw": 299.18390915878956,
+      "shortfall_frequency": 0.043756113465927615,
+      "mean_shortfall_mw_when_short": 125.11700156442967,
+      "p99_shortfall_mw": 188.471026386057,
+      "max_shortfall_mw": 837.350689355655
+    },
+    "dynamic_reserve_p05_p50_p95_mw": [
+      133.64115863859044,
+      332.9405612643732,
+      870.2810562235107
+    ]
+  },
+  "alerts": {
+    "reserve_ref_mw": 665.7512028573248,
+    "width_ref_mw": 1338.1422919608528,
+    "base_rate_fixed_rule_shortfall": 0.05255950440169547,
+    "mean_underforecast_mw_all_hours": 57.13323448547819,
+    "risk_watch": {
+      "hours": 1975,
+      "share_of_hours": 0.12879034887512228,
+      "fixed_rule_shortfall_rate_when_flagged": 0.062278481012658225,
+      "fixed_rule_shortfall_rate_when_not_flagged": 0.05112275449101796,
+      "share_of_fixed_rule_shortfalls_flagged": 0.15260545905707196,
+      "share_of_fixed_rule_shortfall_mwh_flagged": 0.16059746554154566,
+      "mean_abs_error_mw_when_flagged": 289.6669593260629,
+      "mean_abs_error_mw_when_not_flagged": 178.27793618524666
+    },
+    "risk_confirmed": {
+      "hours": 1215,
+      "share_of_hours": 0.07923051842191066,
+      "fixed_rule_shortfall_rate_when_flagged": 0.06419753086419754,
+      "fixed_rule_shortfall_rate_when_not_flagged": 0.05155807365439093,
+      "share_of_fixed_rule_shortfalls_flagged": 0.0967741935483871,
+      "share_of_fixed_rule_shortfall_mwh_flagged": 0.10884955033959426,
+      "mean_abs_error_mw_when_flagged": 317.67847965534935,
+      "mean_abs_error_mw_when_not_flagged": 181.86303961208358
+    },
+    "uncertainty_high": {
+      "hours": 2547,
+      "share_of_hours": 0.1660906423214868,
+      "fixed_rule_shortfall_rate_when_flagged": 0.06281900274833137,
+      "fixed_rule_shortfall_rate_when_not_flagged": 0.0505161088520488,
+      "share_of_fixed_rule_shortfalls_flagged": 0.19851116625310175,
+      "share_of_fixed_rule_shortfall_mwh_flagged": 0.23386347484419104,
+      "mean_abs_error_mw_when_flagged": 305.4897143595695,
+      "mean_abs_error_mw_when_not_flagged": 170.14413275180215
+    }
+  },
+  "by_month": [
+    {
+      "month": "2019-01",
+      "coverage_raw": 0.8346774193548387,
+      "coverage_static": 0.9045698924731183,
+      "coverage_aci": 0.9112903225806451,
+      "width_aci": 971.9739017608067,
+      "mean_reserve_dynamic": 418.9147537087454
+    },
+    {
+      "month": "2019-02",
+      "coverage_raw": 0.7470238095238095,
+      "coverage_static": 0.8601190476190477,
+      "coverage_aci": 0.875,
+      "width_aci": 894.8260023907357,
+      "mean_reserve_dynamic": 353.2242742314155
+    },
+    {
+      "month": "2019-03",
+      "coverage_raw": 0.6814516129032258,
+      "coverage_static": 0.8266129032258065,
+      "coverage_aci": 0.9045698924731183,
+      "width_aci": 911.4484222459901,
+      "mean_reserve_dynamic": 325.4958307952092
+    },
+    {
+      "month": "2019-04",
+      "coverage_raw": 0.7694444444444445,
+      "coverage_static": 0.8791666666666667,
+      "coverage_aci": 0.9277777777777778,
+      "width_aci": 936.0446391491394,
+      "mean_reserve_dynamic": 367.75111732444753
+    },
+    {
+      "month": "2019-05",
+      "coverage_raw": 0.7459677419354839,
+      "coverage_static": 0.8736559139784946,
+      "coverage_aci": 0.8709677419354839,
+      "width_aci": 854.9868844678172,
+      "mean_reserve_dynamic": 390.4363913095199
+    },
+    {
+      "month": "2019-06",
+      "coverage_raw": 0.7541666666666667,
+      "coverage_static": 0.8361111111111111,
+      "coverage_aci": 0.9013888888888889,
+      "width_aci": 1201.6440395564407,
+      "mean_reserve_dynamic": 466.36980639811634
+    },
+    {
+      "month": "2019-07",
+      "coverage_raw": 0.896505376344086,
+      "coverage_static": 0.9583333333333334,
+      "coverage_aci": 0.9206989247311828,
+      "width_aci": 621.8858854717244,
+      "mean_reserve_dynamic": 313.89662997923415
+    },
+    {
+      "month": "2019-08",
+      "coverage_raw": 0.8548387096774194,
+      "coverage_static": 0.928763440860215,
+      "coverage_aci": 0.8736559139784946,
+      "width_aci": 680.507552250593,
+      "mean_reserve_dynamic": 391.19017748921493
+    },
+    {
+      "month": "2019-09",
+      "coverage_raw": 0.7944444444444444,
+      "coverage_static": 0.8916666666666667,
+      "coverage_aci": 0.9152777777777777,
+      "width_aci": 870.8355230163802,
+      "mean_reserve_dynamic": 364.2143043897252
+    },
+    {
+      "month": "2019-10",
+      "coverage_raw": 0.8145161290322581,
+      "coverage_static": 0.9166666666666666,
+      "coverage_aci": 0.896505376344086,
+      "width_aci": 679.5635779196235,
+      "mean_reserve_dynamic": 306.6823587432896
+    },
+    {
+      "month": "2019-11",
+      "coverage_raw": 0.8486111111111111,
+      "coverage_static": 0.9611111111111111,
+      "coverage_aci": 0.9069444444444444,
+      "width_aci": 593.3184409323475,
+      "mean_reserve_dynamic": 277.86334077032683
+    },
+    {
+      "month": "2019-12",
+      "coverage_raw": 0.7325268817204301,
+      "coverage_static": 0.8279569892473119,
+      "coverage_aci": 0.8763440860215054,
+      "width_aci": 896.1064283766372,
+      "mean_reserve_dynamic": 389.03099126231024
+    },
+    {
+      "month": "2020-01",
+      "coverage_raw": 0.6384408602150538,
+      "coverage_static": 0.7540322580645161,
+      "coverage_aci": 0.9045698924731183,
+      "width_aci": 1134.076962167521,
+      "mean_reserve_dynamic": 441.82818927567513
+    },
+    {
+      "month": "2020-02",
+      "coverage_raw": 0.6537356321839081,
+      "coverage_static": 0.742816091954023,
+      "coverage_aci": 0.9152298850574713,
+      "width_aci": 1431.4558226369436,
+      "mean_reserve_dynamic": 445.60038827193586
+    },
+    {
+      "month": "2020-03",
+      "coverage_raw": 0.6209677419354839,
+      "coverage_static": 0.728494623655914,
+      "coverage_aci": 0.9112903225806451,
+      "width_aci": 1190.3454329790409,
+      "mean_reserve_dynamic": 396.58792718895006
+    },
+    {
+      "month": "2020-04",
+      "coverage_raw": 0.7402777777777778,
+      "coverage_static": 0.8388888888888889,
+      "coverage_aci": 0.9194444444444444,
+      "width_aci": 1102.0470916338172,
+      "mean_reserve_dynamic": 401.6187646097153
+    },
+    {
+      "month": "2020-05",
+      "coverage_raw": 0.8467741935483871,
+      "coverage_static": 0.918010752688172,
+      "coverage_aci": 0.8938172043010753,
+      "width_aci": 848.6078931163963,
+      "mean_reserve_dynamic": 415.2414413401392
+    },
+    {
+      "month": "2020-06",
+      "coverage_raw": 0.7375,
+      "coverage_static": 0.8291666666666667,
+      "coverage_aci": 0.8708333333333333,
+      "width_aci": 1164.8358953526176,
+      "mean_reserve_dynamic": 467.2277166766151
+    },
+    {
+      "month": "2020-07",
+      "coverage_raw": 0.8387096774193549,
+      "coverage_static": 0.9220430107526881,
+      "coverage_aci": 0.918010752688172,
+      "width_aci": 915.6812995636799,
+      "mean_reserve_dynamic": 449.1216289361151
+    },
+    {
+      "month": "2020-08",
+      "coverage_raw": 0.8118279569892473,
+      "coverage_static": 0.9166666666666666,
+      "coverage_aci": 0.885752688172043,
+      "width_aci": 782.8679301796016,
+      "mean_reserve_dynamic": 384.0285223391528
+    },
+    {
+      "month": "2020-09",
+      "coverage_raw": 0.7371349095966621,
+      "coverage_static": 0.8386648122392212,
+      "coverage_aci": 0.9040333796940194,
+      "width_aci": 1314.7188755330512,
+      "mean_reserve_dynamic": 555.2480545152227
+    }
+  ],
+  "demo_window": {
+    "start": "2019-09-08 23:00:00+00:00",
+    "end": "2019-09-22 23:00:00+00:00"
+  }
+}
