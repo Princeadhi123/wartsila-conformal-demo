@@ -419,3 +419,17 @@ def test_slider_updates_step_via_callback_not_assignment():
         assert any("on_change" in {k.arg for k in n.keywords}
                    for n in sliders), (
             f"{mod}: {slider_key} slider lacks on_change callback")
+
+
+@pytest.mark.parametrize("page", sorted(APP.glob("*.py")),
+                         ids=lambda p: p.name)
+def test_no_deprecated_use_container_width(page):
+    tree = ast.parse(page.read_text(encoding="utf-8"))
+    hits = [
+        f"{page.name}:{n.lineno}"
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Call)
+        for k in n.keywords
+        if k.arg == "use_container_width"
+    ]
+    assert not hits, f"deprecated kwarg at {', '.join(hits)}"

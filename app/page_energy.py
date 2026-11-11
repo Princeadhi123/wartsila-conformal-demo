@@ -170,13 +170,13 @@ def _live(df, alerts, metrics, mode_override, extra):
         )
 
     st.markdown("**Residual load and forecast interval**")
-    st.plotly_chart(_main_fig(df, alerts, step), use_container_width=True,
+    st.plotly_chart(_main_fig(df, alerts, step), width="stretch",
                     key="e_main_chart", config={"scrollZoom": False})
 
     left, right = st.columns([0.6, 0.4])
     with left:
         st.markdown("**Reserve: recommended vs standing vs fixed rule**")
-        st.plotly_chart(_reserve_fig(df, step), use_container_width=True,
+        st.plotly_chart(_reserve_fig(df, step), width="stretch",
                         key="e_reserve_chart",
                         config={"scrollZoom": False})
     with right:
@@ -321,6 +321,6 @@ def show() -> None:
         "un-calibrated model band and the static CQR band drift with the "
         "weather regime; online adaptive conformal keeps the stated level."
     )
-    st.plotly_chart(_rollcov_fig(df_full), use_container_width=True,
+    st.plotly_chart(_rollcov_fig(df_full), width="stretch",
                     key="e_rollcov_chart", config={"scrollZoom": False})
     C.footer()

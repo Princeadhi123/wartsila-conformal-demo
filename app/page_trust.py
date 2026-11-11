@@ -48,7 +48,7 @@ def _marine_tables(mm: dict) -> None:
             "width adaptive": _f4(s["mean_width_adaptive"]),
         })
     st.dataframe(pd.DataFrame(rows).set_index("target"),
-                 use_container_width=True)
+                 width="stretch")
 
     st.markdown("**Alert quality — conventional vs uncertainty-aware**")
     rows = []
@@ -66,7 +66,7 @@ def _marine_tables(mm: dict) -> None:
             "watch | healthy": _pct(s["ua_watch_rate_when_healthy"]),
         })
     st.dataframe(pd.DataFrame(rows).set_index("target"),
-                 use_container_width=True)
+                 width="stretch")
 
     st.markdown("**Voyage replay — alert episodes**")
     rows = []
@@ -85,7 +85,7 @@ def _marine_tables(mm: dict) -> None:
                 "hours in false alarm": e["steps_in_false_alarm"],
             })
     st.dataframe(pd.DataFrame(rows).set_index(["target", "feed"]),
-                 use_container_width=True)
+                 width="stretch")
     st.caption(
         "For the watch tier, raises while still above threshold are the "
         "intended early warning — they ask for evidence, not action."
@@ -115,7 +115,7 @@ def _marine_charts(mm: dict) -> None:
         fig.add_hline(y=0.9, line_dash="dash", line_color=C.COLORS["accent"])
         fig.update_layout(title=f"{t} — coverage by speed", barmode="group",
                           height=280, yaxis_range=[0.5, 1.02], **_BASE)
-        col.plotly_chart(fig, use_container_width=True)
+        col.plotly_chart(fig, width="stretch")
         wfig = go.Figure()
         wfig.add_trace(go.Scatter(x=bs["v"], y=bs["width_adaptive"],
                                   mode="lines+markers",
@@ -128,7 +128,7 @@ def _marine_charts(mm: dict) -> None:
                                   name="split width"))
         wfig.update_layout(title=f"{t} — mean interval width by speed",
                            height=220, **_BASE)
-        col.plotly_chart(wfig, use_container_width=True)
+        col.plotly_chart(wfig, width="stretch")
     st.caption(
         "Constant-width intervals under-cover at 3 kn, exactly where "
         "estimation is hardest; the adaptive band widens there and keeps "
@@ -158,7 +158,7 @@ def _calibration_charts(mm: dict, em: dict) -> None:
     fig.update_layout(title="Marine (held-out test)", height=380,
                       xaxis=dict(title="nominal", range=[0.5, 1.0]),
                       yaxis=dict(title="empirical", **square), **_BASE)
-    c1.plotly_chart(fig, use_container_width=True)
+    c1.plotly_chart(fig, width="stretch")
 
     cc = pd.DataFrame(em["calibration_curve"])
     fig2 = go.Figure()
@@ -173,7 +173,7 @@ def _calibration_charts(mm: dict, em: dict) -> None:
     fig2.update_layout(title="Energy (static CQR)", height=380,
                        xaxis=dict(title="nominal", range=[0.5, 1.0]),
                        yaxis=dict(title="empirical", **square), **_BASE)
-    c2.plotly_chart(fig2, use_container_width=True)
+    c2.plotly_chart(fig2, width="stretch")
 
 
 def _interactive(mm: dict) -> None:
@@ -218,7 +218,7 @@ def _energy_section(em: dict) -> None:
                                     "mean width (MW)",
                                     "worst-month coverage"])
         .set_index("method"),
-        use_container_width=True)
+        width="stretch")
     acc = em["accuracy"]
     st.markdown(
         f"Forecast accuracy: model MAE **{acc['mae_model']:,.0f} MW**, RMSE "
@@ -240,7 +240,7 @@ def _energy_section(em: dict) -> None:
     fig.add_hline(y=0.9, line_dash="dash", line_color="#E8EEF4")
     fig.update_layout(title="Monthly empirical coverage", height=300,
                       yaxis_range=[0.5, 1.0], **_BASE)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     st.markdown("**Is the uncertainty signal informative?**")
     rows = []
@@ -255,7 +255,7 @@ def _energy_section(em: dict) -> None:
             "MAE not flagged (MW)": _mw(a["mean_abs_error_mw_when_not_flagged"]),
         })
     st.dataframe(pd.DataFrame(rows).set_index("flag"),
-                 use_container_width=True)
+                 width="stretch")
     st.caption(
         "Flagged hours carry materially larger forecast error — the "
         "uncertainty signal identifies the difficult hours before the "
@@ -279,7 +279,7 @@ def _energy_section(em: dict) -> None:
             "max shortfall (MW)": _mw(d["max_shortfall_mw"]),
         })
     st.dataframe(pd.DataFrame(rows).set_index("policy"),
-                 use_container_width=True)
+                 width="stretch")
     st.info(
         "Honest reading: on this public dataset the dynamic rule keeps the "
         "stated risk level and cuts the 99th-percentile shortfall, but "

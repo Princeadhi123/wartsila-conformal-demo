@@ -105,7 +105,7 @@ def show() -> None:
             alertlogic -> router
         }
         """,
-        use_container_width=True,
+        width="stretch",
     )
 
     with st.expander("What is real in this demo"):

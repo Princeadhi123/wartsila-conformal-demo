@@ -201,7 +201,7 @@ def _live(voy, metrics, ua, naive, fuel_price, mode_override, extra):
         st.plotly_chart(
             _main_fig(win, ua, naive, ss.m_truth, wash_step,
                       metrics["thresholds"]),
-            use_container_width=True, key="m_main_chart",
+            width="stretch", key="m_main_chart",
             config={"scrollZoom": False},
         )
         st.caption(
@@ -211,7 +211,7 @@ def _live(voy, metrics, ua, naive, fuel_price, mode_override, extra):
         cols = st.columns(4)
         for col, (sensor, label) in zip(cols, _SENSORS.items()):
             col.plotly_chart(_spark(label, win["step"], win[sensor]),
-                             use_container_width=True,
+                             width="stretch",
                              key=f"m_spark_{sensor}",
                              config={"scrollZoom": False})
     with right, st.container(height=760):
