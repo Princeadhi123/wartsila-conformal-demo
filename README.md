@@ -17,14 +17,46 @@ stated coverage guarantee. Alerts are raised on interval evidence
 troubleshooting steps cited to a knowledge base, and an operator-load
 router adapts advisory verbosity to alert pressure.
 
+## Demo video
+
+[![Watch the demo video](deliverables/poster_polished.png)](https://github.com/Princeadhi123/wartsila-conformal-demo/blob/master/deliverables/project_demo_tighter_transitions.mp4)
+
+- [Watch the demo video (MP4, 1 min 53 s)](deliverables/project_demo_tighter_transitions.mp4) —
+  narrated walkthrough of both consoles.
+- [Subtitles](deliverables/project_demo_tighter_transitions.srt)
+- [Narration script](deliverables/project_demo_polished_script.md) —
+  the script retains the original two-minute scene timings; the video
+  and subtitles use the tighter revised timing.
+
+Live app: <https://wartsila-conformal-demo-nhesdmgklkaaibyygl4ykn.streamlit.app/>.
+If the hosted app is unavailable, use the video or run locally.
+
 ## Quick start
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/Princeadhi123/wartsila-conformal-demo.git
+cd wartsila-conformal-demo
+python -m venv .venv
 ```
 
-The prebuilt pipeline artifacts are already in `artifacts/` — to
-regenerate them (~2–4 min total):
+Activate the environment:
+
+```powershell
+.\.venv\Scripts\Activate.ps1    # Windows PowerShell
+```
+
+```bash
+source .venv/bin/activate       # macOS / Linux
+```
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+The prebuilt pipeline artifacts are already in `artifacts/` — no
+regeneration is needed to run the demo. To regenerate them (~2–4 min
+total; this downloads the public source data, so network access is
+needed for regeneration, not for default use):
 
 ```bash
 python scripts/run_pipeline.py
@@ -33,11 +65,38 @@ python scripts/run_pipeline.py
 Run the demo app:
 
 ```bash
-.\run_demo.bat          # Windows
-./run_demo.sh           # or: python -m streamlit run app/app.py --server.port 8501
+python -m streamlit run app/app.py --server.port 8501
+```
+
+Convenience launchers do the same thing:
+
+```powershell
+.\run_demo.bat    # Windows PowerShell
+```
+
+```bash
+./run_demo.sh     # macOS / Linux
 ```
 
 then open <http://localhost:8501>. Tests: `python -m pytest tests -q`.
+
+## Streamlit Community Cloud
+
+Deploy with: repository `Princeadhi123/wartsila-conformal-demo`, branch
+`master`, main file `app/app.py`, dependencies from the root
+`requirements.txt` (which includes `plotly==6.1.1`). The prebuilt
+artifacts are committed, so the app does not run the pipeline at
+startup.
+
+Troubleshooting: if a `ModuleNotFoundError` occurs at `import plotly...`,
+check **Manage app → Logs** for the deployed branch/commit, dependency
+installation and any installation failure. An outdated deployment or
+incomplete dependency installation may be responsible; reboot after
+correcting the deployment, but note that a reboot alone may not rebuild
+the dependency environment.
+The app never installs packages at runtime, and the optional LLM
+advisory still falls back to the offline composer without secrets (see
+below).
 
 ## Optional LLM advisory (CSC Aitta)
 
@@ -127,6 +186,8 @@ app/            Streamlit demo (5 pages, live replay consoles)
   page_*.py     Overview / Marine / Energy / Trust & validation / Pilot
 artifacts/      pipeline outputs (CSVs, metrics JSON, calibration scores)
 data/raw/       public datasets (not committed)
+deliverables/   demo video, subtitles, poster, narration script
+docs/           meeting/demo script, LLM latency observations
 kb/             synthetic knowledge base (markdown, cited by advisories)
 scripts/        run_pipeline.py (regenerates artifacts)
 src/uaagent/    data.py · conformal.py · marine.py · energy.py
@@ -146,3 +207,5 @@ tests/          pytest suite (conformal, rag/agent, alerts, app)
   UI inputs, not measurements.
 - The knowledge base is synthetic; no proprietary or manufacturer data
   is used anywhere in the demo.
+- This is a research demonstration, not a production safety system; the
+  next step is human review and validation with real operators.
