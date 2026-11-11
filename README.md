@@ -19,10 +19,13 @@ router adapts advisory verbosity to alert pressure.
 
 ## Demo video
 
-[![Watch the demo video](deliverables/poster_polished.png)](https://github.com/Princeadhi123/wartsila-conformal-demo/blob/master/deliverables/project_demo_tighter_transitions.mp4)
+![Animated preview of the uncertainty-aware demo](deliverables/demo_preview.gif)
 
-- [Watch the demo video (MP4, 1 min 53 s)](deliverables/project_demo_tighter_transitions.mp4) —
+- [Watch the full narrated demo (MP4, 1 min 53 s)](deliverables/project_demo_tighter_transitions.mp4) —
   narrated walkthrough of both consoles.
+- [Upload-ready MP4 (720p, under 10 MB)](deliverables/project_demo_readme_upload.mp4) —
+  re-encoded for GitHub attachment upload (issue/PR comment) where an
+  inline-playable copy is wanted.
 - [Subtitles](deliverables/project_demo_tighter_transitions.srt)
 - [Narration script](deliverables/project_demo_polished_script.md) —
   the script retains the original two-minute scene timings; the video
