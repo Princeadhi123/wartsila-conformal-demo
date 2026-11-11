@@ -298,6 +298,108 @@ def test_feed_column_uses_fixed_height_container():
         assert hits, f"{mod}: no st.container(height={height}) found"
 
 
+def test_status_strip_wrapped_in_keyed_container():
+    for mod, key in (("page_marine", "m_replay_status"),
+                     ("page_energy", "e_replay_status")):
+        found = False
+        for node in ast.walk(_tree(mod)):
+            if isinstance(node, ast.With):
+                for item in node.items:
+                    ctx = item.context_expr
+                    if (isinstance(ctx, ast.Call)
+                            and _call_name(ctx) == "container"
+                            and any(k.arg == "key"
+                                    and isinstance(k.value, ast.Constant)
+                                    and k.value.value == key
+                                    for k in ctx.keywords)):
+                        found = True
+        assert found, f"{mod}: no st.container(key={key!r}) wrapper"
+
+
+def test_reserve_status_space_helper_defined_and_called_once():
+    src = (APP / "common.py").read_text(encoding="utf-8")
+    assert "def reserve_replay_status_space" in src
+    for needle in ("m_replay_status", "e_replay_status",
+                   "container-type:inline-size", "@container",
+                   "min-height:", "nth-child"):
+        assert needle in src, needle
+    assert "scroll_probe" not in src
+    assert "def reserve_chart_space" in src
+    for mod, keys in (("page_marine",
+                       {"m_main_chart", "m_spark_T48", "m_spark_T2",
+                        "m_spark_P2", "m_spark_mf"}),
+                      ("page_energy", {"e_main_chart", "e_reserve_chart",
+                                       "e_rollcov_chart"})):
+        show = next(n for n in ast.walk(_tree(mod))
+                    if isinstance(n, ast.FunctionDef) and n.name == "show")
+        calls = [_call_name(n) for n in ast.walk(show)
+                 if isinstance(n, ast.Call)]
+        assert calls.count("reserve_replay_status_space") == 1, mod
+        assert calls.count("scroll_probe") == 0, mod
+        reserved = [n for n in ast.walk(show)
+                    if isinstance(n, ast.Call)
+                    and _call_name(n) == "reserve_chart_space"]
+        assert len(reserved) == 1, mod
+        d = reserved[0].args[0]
+        assert isinstance(d, ast.Dict) and {
+            k.value for k in d.keys} == keys, mod
+        chart_keys = {
+            k.value.value for n in ast.walk(_tree(mod))
+            if isinstance(n, ast.Call) and _call_name(n) == "plotly_chart"
+            for k in n.keywords if k.arg == "key"
+            and isinstance(k.value, ast.Constant)}
+        assert chart_keys <= keys, (mod, chart_keys - keys)
+        assert {f"m_spark_{s}" for s in page_marine._SENSORS} <= keys             if mod == "page_marine" else True
+
+
+def test_dirty_flag_cleared_and_step_frozen_after_swallowed_pause():
+    for mod, playing, step, dirty in (
+            ("page_marine", "m_playing", "m_step", "m_dirty"),
+            ("page_energy", "e_playing", "e_step", "e_dirty")):
+        at = _at(mod)
+        at.session_state[playing] = True
+        at.run()
+        assert at.session_state[step] > 0 or mod == "page_marine"
+        at.session_state[playing] = False
+        at.session_state[dirty] = True
+        frozen = at.session_state[step]
+        at.run()
+        assert not at.exception
+        assert at.session_state[playing] is False
+        assert at.session_state[step] == frozen
+        assert at.session_state[dirty] is False
+
+
+def test_transport_buttons_use_on_click():
+    for mod, keys in (("page_marine",
+                       {"m_play", "m_restart", "m_first", "m_wash"}),
+                      ("page_energy", {"e_play", "e_restart"})):
+        hits = [n for n in ast.walk(_tree(mod))
+                if isinstance(n, ast.Call) and _call_name(n) == "button"
+                and any(k.arg == "key" and isinstance(k.value, ast.Constant)
+                        and k.value.value in keys for k in n.keywords)]
+        assert len(hits) == len(keys), (
+            f"{mod}: expected {sorted(keys)} buttons")
+        for n in hits:
+            assert "on_click" in {k.arg for k in n.keywords}, ast.dump(n)
+
+
+def test_live_starts_with_dirty_check_and_show_clears_it():
+    for mod, flag in (("page_marine", "m_dirty"), ("page_energy", "e_dirty")):
+        live = next(n for n in ast.walk(_tree(mod))
+                    if isinstance(n, ast.FunctionDef) and n.name == "_live")
+        first = live.body[0]
+        msg = f"{mod}._live must start with a {flag} -> st.rerun() guard"
+        assert isinstance(first, ast.If), msg
+        assert flag in ast.dump(first), msg
+        assert "rerun" in ast.dump(first), msg
+        src = (APP / f"{mod}.py").read_text(encoding="utf-8")
+        clear = src.find(f"ss.{flag} = False")
+        frag = src.find("st.fragment(")
+        assert -1 < clear < frag, (
+            f"{mod}: ss.{flag} = False must precede the fragment call")
+
+
 def test_slider_updates_step_via_callback_not_assignment():
     for mod, step_key, slider_key in (
             ("page_marine", "m_step", "m_slider"),

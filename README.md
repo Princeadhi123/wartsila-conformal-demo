@@ -17,22 +17,12 @@ stated coverage guarantee. Alerts are raised on interval evidence
 troubleshooting steps cited to a knowledge base, and an operator-load
 router adapts advisory verbosity to alert pressure.
 
-## Demo video
+## Demo
 
 ![Animated preview of the uncertainty-aware demo](deliverables/demo_preview.gif)
 
-- [Watch the full narrated demo (MP4, 1 min 53 s)](deliverables/project_demo_tighter_transitions.mp4) —
-  narrated walkthrough of both consoles.
-- [Upload-ready MP4 (720p, under 10 MB)](deliverables/project_demo_readme_upload.mp4) —
-  re-encoded for GitHub attachment upload (issue/PR comment) where an
-  inline-playable copy is wanted.
-- [Subtitles](deliverables/project_demo_tighter_transitions.srt)
-- [Narration script](deliverables/project_demo_polished_script.md) —
-  the script retains the original two-minute scene timings; the video
-  and subtitles use the tighter revised timing.
-
-Live app: <https://wartsila-conformal-demo-nhesdmgklkaaibyygl4ykn.streamlit.app/>.
-If the hosted app is unavailable, use the video or run locally.
+- [Watch the full narrated demo (MP4, 1 min 53 s)](deliverables/project_demo_tighter_transitions.mp4)
+- [Live app](https://wartsila-conformal-demo.streamlit.app/)
 
 ## Quick start
 

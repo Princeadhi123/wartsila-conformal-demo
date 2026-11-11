@@ -17,6 +17,7 @@ _YRANGES = {"kMc": [0.955, 1.005], "kMt": [0.972, 1.004]}
 _WINDOW = 240
 _TRANSPARENT = "rgba(0,0,0,0)"
 _GRID_COLOR = "rgba(255,255,255,0.08)"
+_CONVENTIONAL_ALARM = "conventional alarm"
 
 
 def _state_at(row, target: str) -> str:
@@ -74,9 +75,9 @@ def _add_alert_markers(fig: go.Figure, ua: list[dict], naive: list[dict],
                 marker={"symbol": "triangle-up", "size": 13,
                         "color": C.COLORS["confirmed"],
                         "line": {"color": "#0B1B2B", "width": 1.5}},
-                name="conventional alarm", legendgroup="naive",
+                name=_CONVENTIONAL_ALARM, legendgroup="naive",
                 showlegend="naive" not in legend_done,
-                hovertext="conventional alarm"),
+                hovertext=_CONVENTIONAL_ALARM),
             row=row, col=1)
         legend_done.add("naive")
 
@@ -128,7 +129,7 @@ def _main_fig(win: pd.DataFrame, ua: list[dict], naive: list[dict],
                           line_color=C.COLORS["healthy"], row=i, col=1)
     # legend swatches for marker types even when none are visible yet
     for lname, sym, col in (
-        ("conventional alarm", "triangle-up", C.COLORS["confirmed"]),
+        (_CONVENTIONAL_ALARM, "triangle-up", C.COLORS["confirmed"]),
         ("UA watch", "diamond", C.COLORS["watch"]),
         ("UA confirmed", "diamond", C.COLORS["confirmed"]),
     ):
@@ -154,6 +155,8 @@ def _main_fig(win: pd.DataFrame, ua: list[dict], naive: list[dict],
 
 
 def _live(voy, metrics, ua, naive, fuel_price, mode_override, extra):
+    if st.session_state.get("m_dirty"):
+        st.rerun()
     ss = st.session_state
     max_step = len(voy) - 1
     if ss.m_playing:
@@ -175,19 +178,20 @@ def _live(voy, metrics, ua, naive, fuel_price, mode_override, extra):
     # ---- status strip ------------------------------------------------------
     fep = row["fuel_excess_pct"]
     pen = "–" if pd.isna(fep) else f"€{float(fep) / 100 * float(row['mf_healthy']) * 3600 * 24 / 1000 * fuel_price:,.0f}/day"
-    st.markdown(
-        f"**Hour {step}** · ship speed **{row['v']:.0f} kn** · "
-        + C.state_chip(states["kMc"], "compressor ") + " "
-        + C.state_chip(states["kMt"], "turbine ") + " "
-        + C.chip(f"load {score:.2f} · {C.MODE_LABEL[mode]}",
-                 C.COLORS["band_line"])
-        + f" · est. fuel penalty **{pen}** *(illustrative)*",
-        unsafe_allow_html=True,
-    )
-    st.caption(
-        C.MODE_DESCRIPTIONS[mode]
-        + f" (active {active}, new in 24 h {new}, critical {crit})"
-    )
+    with st.container(key="m_replay_status"):
+        st.markdown(
+            f"**Hour {step}** · ship speed **{row['v']:.0f} kn** · "
+            + C.state_chip(states["kMc"], "compressor ") + " "
+            + C.state_chip(states["kMt"], "turbine ") + " "
+            + C.chip(f"load {score:.2f} · {C.MODE_LABEL[mode]}",
+                     C.COLORS["band_line"])
+            + f" · est. fuel penalty **{pen}** *(illustrative)*",
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            C.MODE_DESCRIPTIONS[mode]
+            + f" (active {active}, new in 24 h {new}, critical {crit})"
+        )
 
     left, right = st.columns([0.65, 0.35])
     with left:
@@ -210,25 +214,70 @@ def _live(voy, metrics, ua, naive, fuel_price, mode_override, extra):
                              use_container_width=True,
                              key=f"m_spark_{sensor}",
                              config={"scrollZoom": False})
-    with right:
-        with st.container(height=760):
-            st.markdown("**Conventional alarms (point estimate)**")
-            C.render_naive_feed(naive, step, ss.m_truth)
-            st.markdown("**Uncertainty-aware agent**")
-            sel = C.render_ua_feed(ua, step, "m_alert_sel")
-            st.divider()
-            st.markdown("**Agent advisory**")
-            if sel is None:
-                st.caption("Select an alert once raised to see the advisory.")
-            else:
-                C.render_advisory(sel, mode)
+    with right, st.container(height=760):
+        st.markdown("**Conventional alarms (point estimate)**")
+        C.render_naive_feed(naive, step, ss.m_truth)
+        st.markdown("**Uncertainty-aware agent**")
+        sel = C.render_ua_feed(ua, step, "m_alert_sel")
+        st.divider()
+        st.markdown("**Agent advisory**")
+        if sel is None:
+            st.caption("Select an alert once raised to see the advisory.")
+        else:
+            C.render_advisory(sel, mode)
+
+
+def _mark_dirty() -> None:
+    st.session_state.m_dirty = True
+
+
+def _play_pause() -> None:
+    ss = st.session_state
+    ss.m_playing = not ss.m_playing
+    ss.m_dirty = True
+
+
+def _restart() -> None:
+    ss = st.session_state
+    ss.m_step, ss.m_playing = 0, False
+    ss.m_dirty = True
+
+
+def _jump(step) -> None:
+    ss = st.session_state
+    ss.m_step = step
+    ss.m_dirty = True
+
+
+def _on_speed() -> None:
+    ss = st.session_state
+    ss.m_speed = ss.m_speed_sel
+    ss.m_dirty = True
+
+
+def _on_truth() -> None:
+    ss = st.session_state
+    ss.m_truth = ss.m_truth_t
+    ss.m_dirty = True
+
+
+def _on_full() -> None:
+    ss = st.session_state
+    ss.m_full = ss.m_full_t
+    ss.m_dirty = True
 
 
 def _on_slider() -> None:
-    st.session_state.m_step = st.session_state.m_slider
+    ss = st.session_state
+    ss.m_step = ss.m_slider
+    ss.m_dirty = True
 
 
 def show() -> None:
+    C.reserve_replay_status_space()
+    C.reserve_chart_space({
+        "m_main_chart": 560, "m_spark_T48": 150, "m_spark_T2": 150,
+        "m_spark_P2": 150, "m_spark_mf": 150})
     st.title("Marine console — propulsion health, live replay")
     st.caption(
         "A frigate propulsion plant replays 720 operating hours. The agent "
@@ -248,6 +297,7 @@ def show() -> None:
     ss.setdefault("m_truth", False)
     ss.setdefault("m_full", False)
     ss.setdefault("m_extra", 0)
+    ss.setdefault("m_dirty", False)
     if not ss.get("m_qp_done"):
         ss.m_qp_done = True
         qp = st.query_params
@@ -262,39 +312,39 @@ def show() -> None:
         st.header("Console settings")
         fuel_price = st.number_input(
             "Fuel price (EUR/t, illustrative)", 100, 2000, 700, 50,
-            key="m_fuel_price")
+            key="m_fuel_price", on_change=_mark_dirty)
         mode_override = st.selectbox(
             "Advisory mode", ["Auto", "Focus", "Standard", "Deep dive"],
-            key="m_mode")
+            key="m_mode", on_change=_mark_dirty)
         extra = st.slider(
             "Simulated additional concurrent alerts from other assets",
-            0, 6, key="m_extra")
+            0, 6, key="m_extra", on_change=_mark_dirty)
 
     mode_override = {"Focus": "focus", "Standard": "standard",
                      "Deep dive": "deep_dive"}.get(mode_override, "Auto")
 
     c = st.columns([1, 1, 1.4, 1.4, 3, 1.6, 1.8])
-    if c[0].button("Pause" if ss.m_playing else "Play", key="m_play"):
-        ss.m_playing = not ss.m_playing
-    if c[1].button("Restart", key="m_restart"):
-        ss.m_step, ss.m_playing = 0, False
-    if c[2].button("Jump to first alert", key="m_first"):
-        ss.m_step = min(a["step"] for a in ua)
-    if c[3].button("Jump to wash", key="m_wash"):
-        ss.m_step = 560
+    c[0].button("Pause" if ss.m_playing else "Play", key="m_play",
+                on_click=_play_pause)
+    c[1].button("Restart", key="m_restart", on_click=_restart)
+    c[2].button("Jump to first alert", key="m_first",
+                on_click=_jump, args=(min(a["step"] for a in ua),))
+    c[3].button("Jump to wash", key="m_wash", on_click=_jump, args=(560,))
     ss.m_step = max(0, min(int(ss.m_step), len(voy) - 1))
     ss.m_slider = int(ss.m_step)
     c[4].slider("Voyage hour", 0, len(voy) - 1,
                 key="m_slider", on_change=_on_slider)
-    ss.m_speed = c[5].selectbox("h / tick", [1, 4, 12],
-                                index=[1, 4, 12].index(ss.m_speed),
-                                key="m_speed_sel")
+    ss.m_speed_sel = ss.m_speed
+    c[5].selectbox("h / tick", [1, 4, 12],
+                   key="m_speed_sel", on_change=_on_speed)
     with c[6]:
-        ss.m_truth = st.toggle("Reveal ground truth (simulator)",
-                               value=ss.m_truth, key="m_truth_t")
-        ss.m_full = st.toggle("Full history", value=ss.m_full,
-                              key="m_full_t")
+        ss.m_truth_t = ss.m_truth
+        st.toggle("Reveal ground truth (simulator)",
+                  key="m_truth_t", on_change=_on_truth)
+        ss.m_full_t = ss.m_full
+        st.toggle("Full history", key="m_full_t", on_change=_on_full)
 
+    ss.m_dirty = False
     st.fragment(run_every=1.0 if ss.m_playing else None)(_live)(
         voy, metrics, ua, naive, fuel_price, mode_override, extra)
     C.footer()

@@ -148,6 +148,35 @@ def explain_cached(alert: dict, mode: str, llm_base_url: str = "",
 # Render helpers
 # ---------------------------------------------------------------------------
 
+_STATUS_WIDTHS = {
+    "m_replay_status": (1093, 1129),
+    "e_replay_status": (1825, 1129),
+}
+
+
+def reserve_replay_status_space() -> None:
+    rules = []
+    for key, widths in _STATUS_WIDTHS.items():
+        rules.append(f".st-key-{key}{{container-type:inline-size;}}")
+        for idx, (width, lh) in enumerate(zip(widths, (1.6, 1.4)),
+                                          start=1):
+            for div, lines in ((1, 2), (2, 3), (3, 4), (4, 6)):
+                rules.append(
+                    f"@container (max-width:{round(width / div)}px)"
+                    f"{{.st-key-{key} > div:nth-child({idx})"
+                    f"{{min-height:{lines * lh}rem;}}}}")
+    st.html("<style>" + "".join(rules) + "</style>")
+
+
+def reserve_chart_space(heights: dict[str, int]) -> None:
+    st.html(
+        "<style>" + "".join(
+            f".st-key-{key}{{min-height:{h}px;}}"
+            for key, h in heights.items())
+        + "</style>"
+    )
+
+
 def chip(text: str, color: str) -> str:
     return (
         f'<span style="background:{color}22;border:1px solid {color};'
