@@ -18,6 +18,7 @@ for p in (SRC, ROOT / "app"):
 from uaagent.agent import (                              # noqa: E402
     KIND_LABEL,
     MODE_LABEL,
+    LLMClient,
     explain,
     format_value,
 )
@@ -105,9 +106,42 @@ def get_energy_alerts(df: pd.DataFrame) -> list[dict]:
     return energy_alerts(df, load_energy_metrics())
 
 
-@st.cache_data(show_spinner=False)
-def explain_cached(alert: dict, mode: str):
-    return explain(alert, load_kb(), mode=mode)
+_LLM_SECRET_KEYS = ("UAA_LLM_BASE_URL", "UAA_LLM_MODEL",
+                    "UAA_LLM_API_KEY", "AITTA_KEY")
+
+
+def _llm_secret_overrides() -> dict:
+    """Optional LLM config from root-level st.secrets keys.
+
+    A missing or unreadable secrets file yields no overrides; secrets are
+    never copied into os.environ (env vars still win inside from_env).
+    """
+    try:
+        secrets = st.secrets
+        return {k: str(secrets[k]) for k in _LLM_SECRET_KEYS if k in secrets}
+    except Exception:
+        return {}
+
+
+def get_llm_client() -> "LLMClient | None":
+    """The configured advisory LLM client, or None when unconfigured.
+
+    Resolved on every rerun — cheap file reads — so token rotation or
+    endpoint changes take effect without restarting the app.
+    """
+    return LLMClient.from_env(overrides=_llm_secret_overrides())
+
+
+@st.cache_data(show_spinner=False, ttl=300)
+def explain_cached(alert: dict, mode: str, llm_base_url: str = "",
+                   llm_model: str = "", _llm: "LLMClient | None" = None):
+    """Explain one alert; results are cached for 5 minutes.
+
+    The endpoint and model participate in the cache key so a model change
+    never replays another backend's advisory; the client itself (_llm) is
+    excluded from hashing. Fallbacks are cached for the same TTL.
+    """
+    return explain(alert, load_kb(), mode=mode, llm=_llm)
 
 
 # ---------------------------------------------------------------------------
@@ -137,8 +171,21 @@ def render_confidence(text: str) -> None:
 
 def render_advisory(alert: dict, mode: str) -> None:
     """Render a full Explanation for one alert."""
-    ex = explain_cached(alert, mode)
+    llm = get_llm_client()
+    ex = explain_cached(
+        alert, mode,
+        llm_base_url=llm.base_url if llm else "",
+        llm_model=llm.model if llm else "",
+        _llm=llm,
+    )
     st.markdown(f"#### {ex.headline}")
+    if ex.fallback_reason:
+        waited = (f" after {ex.llm_latency_seconds:.1f} s"
+                  if ex.llm_latency_seconds is not None else "")
+        st.warning(
+            f"Configured LLM advisory unavailable ({ex.fallback_reason})"
+            f"{waited} — showing the deterministic offline advisory instead."
+        )
     render_confidence(ex.confidence_statement)
     if ex.why:
         st.markdown("**Why**")
@@ -156,10 +203,16 @@ def render_advisory(alert: dict, mode: str) -> None:
                 f"({h.doc_type}, score {h.score:.2f})"
             )
             st.caption(h.text[:600])
-    st.caption(
+    caption = (
         f"Generator: {ex.generator} · Mode: "
         f"{MODE_LABEL.get(ex.mode, ex.mode)}"
     )
+    if ex.llm_latency_seconds is not None:
+        caption += (
+            f" · LLM request {ex.llm_latency_seconds:.1f} s "
+            "(original request; cached results reuse this timing)"
+        )
+    st.caption(caption)
 
 
 def ua_alert_label(a: dict) -> str:

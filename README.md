@@ -33,11 +33,68 @@ python scripts/run_pipeline.py
 Run the demo app:
 
 ```bash
-run_demo.bat            # Windows
+.\run_demo.bat          # Windows
 ./run_demo.sh           # or: python -m streamlit run app/app.py --server.port 8501
 ```
 
 then open <http://localhost:8501>. Tests: `python -m pytest tests -q`.
+
+## Optional LLM advisory (CSC Aitta)
+
+By default every advisory is written by a deterministic, fully offline
+extractive composer. You can optionally route the advisory text through
+CSC's **Aitta** research inference endpoint — a remote service; the model
+does **not** run on your machine:
+
+- base URL `https://aitta-api.csc.fi/openai/v1`
+- model `openai/gpt-oss-120b`
+
+Get a token per the [Aitta documentation](https://docs.lumi-supercomputer.eu/laif/inference/aitta/)
+and configure it in one of three ways — first match wins per key:
+environment variables, then Streamlit secrets, then the token file.
+
+```powershell
+# Windows PowerShell, current session only
+$env:UAA_LLM_API_KEY = "<your token>"        # $env:AITTA_KEY also works
+# Endpoint and model default to CSC Aitta once any token is present;
+# set them only to target a different OpenAI-compatible server:
+$env:UAA_LLM_BASE_URL = "https://aitta-api.csc.fi/openai/v1"
+$env:UAA_LLM_MODEL = "openai/gpt-oss-120b"
+```
+
+or store just the token as a single line in `%USERPROFILE%\.aitta_token`
+(`~/.aitta_token`). On Streamlit Community Cloud, paste the keys into
+**Manage app → Settings → Secrets** as root-level TOML (see
+`.streamlit/secrets.toml.example`; `secrets.toml` itself is git-ignored):
+
+```toml
+UAA_LLM_BASE_URL = "https://aitta-api.csc.fi/openai/v1"
+UAA_LLM_MODEL = "openai/gpt-oss-120b"
+UAA_LLM_API_KEY = "<your token>"
+```
+
+Notes:
+
+- Never paste tokens into git, issues or chat. If a token is ever
+  exposed, rotate it before reusing it.
+- `openai/gpt-oss-120b` is selected for responsiveness, but a fast reply
+  is not guaranteed: the endpoint can be offline or cold, and the first
+  request after idle may still be slow.
+- Aitta is a research service with no availability guarantee. The first
+  request after idle can be slow and online latency varies; measured
+  request time is shown under each advisory ("original request; cached
+  results reuse this timing"). Initial local GPT-OSS requests timed out
+  after 31.05 s and 30.04 s; CSC subsequently reported the worker as
+  `requested`, not running. These are startup-wait observations, not
+  successful generation times. See [latency observations](docs/LLM_LATENCY.md).
+- Requests use a 30 s connect/read inactivity timeout (not a hard
+  end-to-end deadline) with no retries. If the model
+  is unreachable or returns an unusable answer, the app warns with a
+  categorical reason (e.g. `timeout`, `rate limited`) and falls back to
+  the deterministic offline advisory — the `Generator:` caption shows
+  which path produced the text (`llm:<model>` vs `offline-extractive`).
+- Advisories are cached for 5 minutes per alert/mode/endpoint, including
+  failed attempts.
 
 ## Data sources
 

@@ -13,9 +13,12 @@ The alert contract (produced by the data/ML core) is a plain dict::
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
+import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import requests
 
@@ -156,6 +159,8 @@ class Explanation:
     sources: list[Hit]
     mode: str
     generator: str
+    llm_latency_seconds: float | None = None
+    fallback_reason: str | None = None
 
 
 def format_value(v, domain: str = "marine") -> str:
@@ -171,7 +176,7 @@ def format_value(v, domain: str = "marine") -> str:
     return f"{x:,.0f}" if domain == "energy" else f"{x:.3f}"
 
 
-def _fmt_ctx(v, domain: str, spec: str = "g") -> str:
+def _fmt_ctx(v, spec: str = "g") -> str:
     """Compact formatting for context/why values."""
     try:
         x = float(v)
@@ -186,44 +191,52 @@ def _fmt_ctx(v, domain: str, spec: str = "g") -> str:
 # Query building
 # ---------------------------------------------------------------------------
 
+_QUERY_TERMS = {
+    # kind -> (common, confirmed-state, watch-state) query fragments
+    "compressor_decay": (
+        "compressor fouling decay kMc T2 P2 inlet filter symptoms",
+        "water wash decision criteria fuel penalty online offline wash procedure",
+        "early fouling signs monitoring watch handling",
+    ),
+    "turbine_decay": (
+        "HP turbine degradation kMt T48 erosion hot corrosion tip clearance",
+        "borescope inspection de-rate continued operation",
+        "T48 trend monitoring watch handling",
+    ),
+    "reserve_shortfall_risk": (
+        "reserve sizing upper bound forecast interval spinning fast-start reserve",
+        "fast-start gas engine genset dispatch BESS hybrid ramp",
+        "monitor reserve margin watch handling",
+    ),
+    "forecast_uncertainty_high": (
+        "forecast uncertainty wide interval conservative dispatch upper bound",
+        "unusually wide interval response",
+        "monitor interval width watch handling",
+    ),
+}
+
+
+def _is_low_load(ctx: dict) -> bool:
+    try:
+        return float(ctx.get("speed_knots", 99.0)) < 12.0
+    except (TypeError, ValueError):
+        return False
+
+
 def build_query(alert: dict) -> str:
     """Keyword query tuned per alert kind/state and context."""
     kind = alert.get("kind", "")
     state = alert.get("state", "watch")
     ctx = alert.get("context") or {}
     parts: list[str] = []
-    if kind == "compressor_decay":
-        parts.append("compressor fouling decay kMc T2 P2 inlet filter symptoms")
-        if state == "confirmed":
-            parts.append("water wash decision criteria fuel penalty online offline wash procedure")
-        else:
-            parts.append("early fouling signs monitoring watch handling")
-    elif kind == "turbine_decay":
-        parts.append("HP turbine degradation kMt T48 erosion hot corrosion tip clearance")
-        if state == "confirmed":
-            parts.append("borescope inspection de-rate continued operation")
-        else:
-            parts.append("T48 trend monitoring watch handling")
-    elif kind == "reserve_shortfall_risk":
-        parts.append("reserve sizing upper bound forecast interval spinning fast-start reserve")
-        if state == "confirmed":
-            parts.append("fast-start gas engine genset dispatch BESS hybrid ramp")
-        else:
-            parts.append("monitor reserve margin watch handling")
-    elif kind == "forecast_uncertainty_high":
-        parts.append("forecast uncertainty wide interval conservative dispatch upper bound")
-        if state == "confirmed":
-            parts.append("unusually wide interval response")
-        else:
-            parts.append("monitor interval width watch handling")
-
+    terms = _QUERY_TERMS.get(kind)
+    if terms:
+        base, confirmed, watch = terms
+        parts.append(base)
+        parts.append(confirmed if state == "confirmed" else watch)
     if kind in ("compressor_decay", "turbine_decay"):
         parts.append("sensor validation check before acting")
-        try:
-            low_load = float(ctx.get("speed_knots", 99.0)) < 12.0
-        except (TypeError, ValueError):
-            low_load = False
-        if low_load:
+        if _is_low_load(ctx):
             parts.append("low load observability confirmation run")
     if state == "confirmed":
         parts.append("alert triage escalation")
@@ -268,55 +281,64 @@ def _energy_confidence(alert: dict) -> str:
     fmt = lambda v: format_value(v, "energy")
 
     if kind == "reserve_shortfall_risk":
-        upper = ctx.get("upper_mw")
-        committed = ctx.get("committed_mw")
-        short = ctx.get("margin_mw")
-        short = (-float(short)) if short is not None else float(upper) - float(committed)
-        units = ctx.get("extra_units")
-        unit_mw = ctx.get("unit_mw")
-        s = (
-            f"With 95% confidence residual load in {h_txt} stays below "
-            f"{fmt(upper)} MW. Scheduled generation plus standing reserve "
-            f"covers {fmt(committed)} MW"
-        )
-        if short > 0:
-            units_txt = (
-                f" (≈ {int(units)} × {float(unit_mw):g} MW fast-start units)"
-                if units and unit_mw else ""
-            )
-            s += f" — {fmt(short)} MW short of that bound{units_txt}."
-        else:
-            s += " — sufficient to cover that bound."
-        if alert.get("state") == "confirmed" and ctx.get("upper85_mw") is not None:
-            s += (
-                f" Even the less cautious 85% bound ({fmt(ctx['upper85_mw'])} MW) "
-                f"exceeds committed capacity."
-            )
-        return s
-
+        return _reserve_confidence(alert, ctx, h_txt)
     if kind == "forecast_uncertainty_high":
-        lo_mw = ctx.get("lo_mw", alert["lo"])
-        hi_mw = ctx.get("hi_mw", alert["hi"])
-        width = ctx.get("interval_width", float(hi_mw) - float(lo_mw))
-        tw = ctx.get("typical_width")
-        s = (
-            f"The {cov_txt} interval for residual load in {h_txt} is "
-            f"[{fmt(lo_mw)}, {fmt(hi_mw)}] MW — {fmt(width)} MW wide"
-        )
-        try:
-            ratio = float(width) / float(tw) if tw else None
-        except (TypeError, ValueError, ZeroDivisionError):
-            ratio = None
-        if ratio:
-            s += f", {ratio:.1f}× the typical width"
-        s += ". Treat the point forecast with caution."
-        return s
-
+        return _uncertainty_confidence(alert, ctx, cov_txt, h_txt)
     return (
         f"With {cov_txt} coverage the estimate lies in "
         f"[{fmt(alert['lo'])}, {fmt(alert['hi'])}] MW against the "
         f"{fmt(alert['threshold'])} MW threshold."
     )
+
+
+def _reserve_confidence(alert: dict, ctx: dict, h_txt: str) -> str:
+    fmt = lambda v: format_value(v, "energy")
+    upper = ctx.get("upper_mw")
+    committed = ctx.get("committed_mw")
+    short = ctx.get("margin_mw")
+    short = (-float(short)) if short is not None else float(upper) - float(committed)
+    units = ctx.get("extra_units")
+    unit_mw = ctx.get("unit_mw")
+    s = (
+        f"With 95% confidence residual load in {h_txt} stays below "
+        f"{fmt(upper)} MW. Scheduled generation plus standing reserve "
+        f"covers {fmt(committed)} MW"
+    )
+    if short > 0:
+        units_txt = (
+            f" (≈ {int(units)} × {float(unit_mw):g} MW fast-start units)"
+            if units and unit_mw else ""
+        )
+        s += f" — {fmt(short)} MW short of that bound{units_txt}."
+    else:
+        s += " — sufficient to cover that bound."
+    if alert.get("state") == "confirmed" and ctx.get("upper85_mw") is not None:
+        s += (
+            f" Even the less cautious 85% bound ({fmt(ctx['upper85_mw'])} MW) "
+            f"exceeds committed capacity."
+        )
+    return s
+
+
+def _uncertainty_confidence(alert: dict, ctx: dict, cov_txt: str,
+                            h_txt: str) -> str:
+    fmt = lambda v: format_value(v, "energy")
+    lo_mw = ctx.get("lo_mw", alert["lo"])
+    hi_mw = ctx.get("hi_mw", alert["hi"])
+    width = ctx.get("interval_width", float(hi_mw) - float(lo_mw))
+    tw = ctx.get("typical_width")
+    s = (
+        f"The {cov_txt} interval for residual load in {h_txt} is "
+        f"[{fmt(lo_mw)}, {fmt(hi_mw)}] MW — {fmt(width)} MW wide"
+    )
+    try:
+        ratio = float(width) / float(tw) if tw else None
+    except (TypeError, ValueError, ZeroDivisionError):
+        ratio = None
+    if ratio:
+        s += f", {ratio:.1f}× the typical width"
+    s += ". Treat the point forecast with caution."
+    return s
 
 
 def _headline(alert: dict) -> str:
@@ -332,7 +354,7 @@ def _num(ctx: dict, key: str):
         v = float(ctx[key])
     except (KeyError, TypeError, ValueError):
         return None
-    return None if v != v else v  # NaN -> missing
+    return None if math.isnan(v) else v  # NaN -> missing
 
 
 def _why_bullets(alert: dict) -> list[str]:
@@ -342,12 +364,27 @@ def _why_bullets(alert: dict) -> list[str]:
     return _why_bullets_marine(alert)
 
 
+def _context_bullets(ctx: dict, keys) -> list[str]:
+    """Format raw context signals in the given order via _CTX_LABELS."""
+    out: list[str] = []
+    for key in keys:
+        if key in ctx and key in _CTX_LABELS:
+            label, unit, spec = _CTX_LABELS[key]
+            out.append(
+                f"{label}: {_fmt_ctx(ctx[key], spec)} {unit}".rstrip())
+    return out
+
+
+def _interval_width_ratio(ctx: dict):
+    iw, tw = _num(ctx, "interval_width"), _num(ctx, "typical_width")
+    return (iw / tw) if (iw is not None and tw) else None
+
+
 def _why_bullets_marine(alert: dict) -> list[str]:
     ctx = alert.get("context") or {}
     bullets: list[str] = []
     speed = _num(ctx, "speed_knots")
-    iw, tw = _num(ctx, "interval_width"), _num(ctx, "typical_width")
-    ratio = (iw / tw) if (iw is not None and tw) else None
+    ratio = _interval_width_ratio(ctx)
     # (a) low-load observability first - it determines how much to trust the alert
     if speed is not None and speed < 12:
         bullets.append(
@@ -370,19 +407,12 @@ def _why_bullets_marine(alert: dict) -> list[str]:
             f"baseline at this speed."
         )
     # then raw signals in diagnostic order
-    for key in ("T2_C", "P2_bar", "T48_C", "fuel_flow_kg_s", "speed_knots",
-                "lever_position"):
-        if key in ctx and key in _CTX_LABELS:
-            label, unit, spec = _CTX_LABELS[key]
-            bullets.append(
-                f"{label}: {_fmt_ctx(ctx[key], 'marine', spec)} {unit}".rstrip())
+    bullets.extend(_context_bullets(ctx, (
+        "T2_C", "P2_bar", "T48_C", "fuel_flow_kg_s", "speed_knots",
+        "lever_position")))
     if ratio is None or ratio <= 1.3:
-        for key in ("interval_width", "typical_width"):
-            if key in ctx and key in _CTX_LABELS:
-                label, unit, spec = _CTX_LABELS[key]
-                bullets.append(
-                    f"{label}: {_fmt_ctx(ctx[key], 'marine', spec)} "
-                    f"{unit}".rstrip())
+        bullets.extend(_context_bullets(
+            ctx, ("interval_width", "typical_width")))
     if not bullets:
         bullets.append(
             f"Estimate {format_value(alert['estimate'])} with interval "
@@ -394,7 +424,7 @@ def _why_bullets_marine(alert: dict) -> list[str]:
 
 def _why_bullets_energy(alert: dict) -> list[str]:
     ctx = alert.get("context") or {}
-    fmt = lambda v: _fmt_ctx(v, "energy", "mw")
+    fmt = lambda v: _fmt_ctx(v, "mw")
     bullets: list[str] = []
     # margin / extra units first
     margin = _num(ctx, "margin_mw")
@@ -469,6 +499,24 @@ def _candidate_sentences(line: str) -> list[str]:
     ]
 
 
+def _clean_action_candidates(hit: Hit):
+    """Yield cleaned eligible (20-180 char) action candidates from a chunk."""
+    for raw in hit.text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith(("#", ">")):
+            continue
+        for cand in _candidate_sentences(line):
+            cleaned = _clean_action(cand)
+            if 20 <= len(cleaned) <= 180:
+                yield cleaned
+
+
+def _action_hint_score(key: str, hints) -> int:
+    return (3 * sum(1 for w in hints.get("hi", []) if w in key)
+            + sum(1 for w in hints.get("lo", []) if w in key)
+            - 4 * sum(1 for w in hints.get("neg", []) if w in key))
+
+
 def _extract_actions(sources: list[Hit], cap: int, alert: dict) -> list[dict]:
     """Pull imperative / numbered-step lines out of the retrieved chunks."""
     hints = _ACTION_HINTS.get((alert.get("kind", ""), alert.get("state", "")), [])
@@ -478,26 +526,14 @@ def _extract_actions(sources: list[Hit], cap: int, alert: dict) -> list[dict]:
     seen: set[str] = set()
     order = 0
     for hit in preferred + rest:
-        for raw in hit.text.splitlines():
-            line = raw.strip()
-            if not line or line.startswith(("#", ">")):
+        for cleaned in _clean_action_candidates(hit):
+            key = cleaned.lower()
+            if key in seen:
                 continue
-            for cand in _candidate_sentences(line):
-                cleaned = _clean_action(cand)
-                if not (20 <= len(cleaned) <= 180):
-                    continue
-                key = cleaned.lower()
-                if key in seen:
-                    continue
-                seen.add(key)
-                hint_score = (
-                    3 * sum(1 for w in hints.get("hi", []) if w in key)
-                    + sum(1 for w in hints.get("lo", []) if w in key)
-                    - 4 * sum(1 for w in hints.get("neg", []) if w in key)
-                )
-                candidates.append((hint_score, order,
-                                   {"text": cleaned, "source_ids": [hit.doc_id]}))
-                order += 1
+            seen.add(key)
+            candidates.append((_action_hint_score(key, hints), order,
+                               {"text": cleaned, "source_ids": [hit.doc_id]}))
+            order += 1
         if len(candidates) >= 24:
             break
     candidates.sort(key=lambda c: (-c[0], c[1]))
@@ -569,6 +605,25 @@ def _explain_offline(alert: dict, sources: list[Hit], pool: list[Hit],
 # Optional LLM path (OpenAI-compatible /chat/completions)
 # ---------------------------------------------------------------------------
 
+# CSC Aitta research inference endpoint, per
+# https://docs.lumi-supercomputer.eu/laif/inference/aitta/
+CSC_BASE_URL = "https://aitta-api.csc.fi/openai/v1"
+CSC_MODEL = "openai/gpt-oss-120b"
+REQUEST_TIMEOUT_SECONDS = 30.0  # connect/read timeout; no retries
+_MAX_TOKENS = 2048
+_AITTA_TOKEN_FILE = ".aitta_token"
+
+
+def _aitta_token() -> "str | None":
+    """Read the local Aitta token file if it exists and is readable."""
+    try:
+        token = (Path.home() / _AITTA_TOKEN_FILE).read_text(
+            encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return None
+    return token or None
+
+
 class LLMClient:
     """Minimal OpenAI-compatible chat client; no secrets are logged."""
 
@@ -578,25 +633,67 @@ class LLMClient:
         self.model = model
 
     @classmethod
-    def from_env(cls) -> "LLMClient | None":
-        base = os.environ.get("UAA_LLM_BASE_URL")
-        model = os.environ.get("UAA_LLM_MODEL")
-        if not base or not model:
-            return None
-        return cls(base, os.environ.get("UAA_LLM_API_KEY", ""), model)
+    def from_env(cls, overrides: "dict[str, str] | None" = None
+                 ) -> "LLMClient | None":
+        """Resolve LLM configuration without mutating os.environ.
 
-    def chat(self, messages: list[dict], timeout: float = 20.0) -> str:
+        Per endpoint key: a non-empty environment variable, then the
+        overrides mapping (e.g. Streamlit secrets read by the app). Api
+        key order: env UAA_LLM_API_KEY, env AITTA_KEY, overrides
+        UAA_LLM_API_KEY, overrides AITTA_KEY, then ~/.aitta_token — the
+        file is only consulted when no base is configured or the base is
+        the CSC endpoint, so a CSC token is never sent to another host.
+        A discovered api key defaults missing endpoint settings to the
+        CSC Aitta service; an explicit base+model pair also works with
+        no key (local OpenAI-compatible servers). Returns None when
+        neither holds — this never performs network I/O.
+        """
+        overrides = overrides or {}
+
+        def _cfg(key: str) -> "str | None":
+            return os.environ.get(key) or overrides.get(key) or None
+
+        base = _cfg("UAA_LLM_BASE_URL")
+        model = _cfg("UAA_LLM_MODEL")
+        api_key = (
+            os.environ.get("UAA_LLM_API_KEY")
+            or os.environ.get("AITTA_KEY")
+            or overrides.get("UAA_LLM_API_KEY")
+            or overrides.get("AITTA_KEY")
+            or None
+        )
+        if api_key is None and (
+                base is None or base.rstrip("/") == CSC_BASE_URL):
+            api_key = _aitta_token()
+        if api_key:
+            base = base or CSC_BASE_URL
+            model = model or CSC_MODEL
+        if not (base and model):
+            return None
+        return cls(base, api_key or "", model)
+
+    def chat(self, messages: list[dict],
+             timeout: float = REQUEST_TIMEOUT_SECONDS) -> str:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        payload: dict = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": _MAX_TOKENS,
+        }
+        if self.base_url != CSC_BASE_URL:
+            # Aitta's JSON-mode support is unverified and the prompt already
+            # requests a JSON object, so json mode stays opt-in elsewhere.
+            payload["response_format"] = {"type": "json_object"}
+        if self.model == CSC_MODEL:
+            # gpt-oss supports a reasoning effort knob; low keeps the
+            # advisory interactive.
+            payload["reasoning_effort"] = "low"
         resp = requests.post(
             f"{self.base_url}/chat/completions",
-            json={
-                "model": self.model,
-                "messages": messages,
-                "temperature": 0.2,
-                "response_format": {"type": "json_object"},
-            },
+            json=payload,
             headers=headers,
             timeout=timeout,
         )
@@ -640,13 +737,25 @@ def _llm_messages(alert: dict, sources: list[Hit], mode: str) -> list[dict]:
     ]
 
 
+def _strip_code_fence(raw: str) -> str:
+    """Remove an optional ``` / ```json wrapper using string operations."""
+    raw = raw.strip()
+    if not raw.startswith("```"):
+        return raw
+    raw = raw[3:]
+    if raw.startswith("json"):
+        raw = raw[4:]
+    raw = raw.lstrip()
+    if raw.endswith("```"):
+        raw = raw[:-3]
+    return raw.strip()
+
+
 def _explain_llm(alert: dict, sources: list[Hit], mode: str,
                  llm: LLMClient, conf: str) -> Explanation:
     max_why, max_actions, _ = _MODE_CAPS.get(mode, _MODE_CAPS["standard"])
-    raw = llm.chat(_llm_messages(alert, sources, mode), timeout=20.0)
-    raw = raw.strip()
-    if raw.startswith("```"):
-        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.DOTALL).strip()
+    raw = _strip_code_fence(llm.chat(_llm_messages(alert, sources, mode),
+                                     timeout=REQUEST_TIMEOUT_SECONDS))
     data = json.loads(raw)
     known = {h.doc_id for h in sources}
     headline = str(data["headline"]).strip()
@@ -676,6 +785,26 @@ def _explain_llm(alert: dict, sources: list[Hit], mode: str,
     )
 
 
+def _fallback_reason(exc: Exception) -> str:
+    """Categorical reason for an LLM failure — never exception text, HTTP
+    bodies, headers or tokens."""
+    if isinstance(exc, requests.Timeout):
+        return "timeout"
+    if isinstance(exc, requests.HTTPError):
+        status = getattr(exc.response, "status_code", None)
+        if status in (401, 403):
+            return "authentication failed"
+        if status == 429:
+            return "rate limited"
+        return "service error"
+    if isinstance(exc, ValueError):
+        # includes malformed JSON from the body and rejected citations
+        return "invalid response"
+    if isinstance(exc, requests.RequestException):
+        return "request failed"
+    return "invalid response"
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -689,8 +818,11 @@ def explain(
     """Explain an alert with a source-grounded advisory.
 
     Offline (default) path is a deterministic extractive composer. If an
-    LLMClient is configured (explicitly or via UAA_LLM_* env vars) it is tried
-    first; any failure falls back to the offline composer.
+    LLMClient is configured (explicitly, via UAA_LLM_*/AITTA_KEY env vars
+    or ~/.aitta_token) it is tried first; any failure falls back to the
+    offline composer with a categorical fallback_reason. The measured
+    duration of the attempted LLM call (including response validation)
+    is recorded in llm_latency_seconds on both paths.
     """
     if llm is None:
         llm = LLMClient.from_env()
@@ -699,8 +831,12 @@ def explain(
     sources = _select_sources(pool, max_sources, ensure_log=(mode == "deep_dive"))
     conf = _confidence_statement(alert)
     if llm is not None and sources:
+        started = time.perf_counter()
         try:
-            return _explain_llm(alert, sources, mode, llm, conf)
-        except Exception:
-            pass  # any LLM/parse/citation failure -> deterministic fallback
+            ex = _explain_llm(alert, sources, mode, llm, conf)
+        except Exception as exc:
+            ex = _explain_offline(alert, sources, pool, mode, conf)
+            ex.fallback_reason = _fallback_reason(exc)
+        ex.llm_latency_seconds = time.perf_counter() - started
+        return ex
     return _explain_offline(alert, sources, pool, mode, conf)

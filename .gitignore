@@ -2,3 +2,10 @@ data/raw/
 __pycache__/
 .pytest_cache/
 *.pyc
+
+# local secrets - never commit tokens
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+/nul
