@@ -66,6 +66,7 @@ def _main_fig(df: pd.DataFrame, alerts: list[dict], step: int) -> go.Figure:
         font=dict(color="#E8EEF4"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
         yaxis_title="MW", xaxis_range=[xlo, xhi],
+        uirevision="energy-main",
     )
     fig.update_xaxes(gridcolor="rgba(255,255,255,0.08)")
     fig.update_yaxes(gridcolor="rgba(255,255,255,0.08)")
@@ -91,7 +92,7 @@ def _reserve_fig(df: pd.DataFrame, step: int) -> go.Figure:
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#E8EEF4"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
-        yaxis_title="reserve MW",
+        yaxis_title="reserve MW", uirevision="energy-reserve",
     )
     fig.update_xaxes(gridcolor="rgba(255,255,255,0.08)")
     fig.update_yaxes(gridcolor="rgba(255,255,255,0.08)")
@@ -116,14 +117,13 @@ def _rollcov_fig(df_full: pd.DataFrame) -> go.Figure:
         font=dict(color="#E8EEF4"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
         yaxis_title="rolling 30-day coverage",
-        yaxis_range=[0.5, 1.0],
+        yaxis_range=[0.5, 1.0], uirevision="energy-rollcov",
     )
     fig.update_xaxes(gridcolor="rgba(255,255,255,0.08)")
     fig.update_yaxes(gridcolor="rgba(255,255,255,0.08)")
     return fig
 
 
-@st.fragment(run_every=1.0)
 def _live(df, alerts, metrics, mode_override, extra):
     ss = st.session_state
     max_step = len(df) - 1
@@ -131,6 +131,7 @@ def _live(df, alerts, metrics, mode_override, extra):
         ss.e_step = min(ss.e_step + ss.e_speed, max_step)
         if ss.e_step >= max_step:
             ss.e_playing = False
+            st.rerun()
     step = min(int(ss.e_step), max_step)
     row = df.iloc[step]
     unit_mw = float(metrics["unit_mw"])
@@ -164,21 +165,29 @@ def _live(df, alerts, metrics, mode_override, extra):
     )
 
     st.markdown("**Residual load and forecast interval**")
-    st.plotly_chart(_main_fig(df, alerts, step), use_container_width=True)
+    st.plotly_chart(_main_fig(df, alerts, step), use_container_width=True,
+                    key="e_main_chart", config={"scrollZoom": False})
 
     left, right = st.columns([0.6, 0.4])
     with left:
         st.markdown("**Reserve: recommended vs standing vs fixed rule**")
-        st.plotly_chart(_reserve_fig(df, step), use_container_width=True)
+        st.plotly_chart(_reserve_fig(df, step), use_container_width=True,
+                        key="e_reserve_chart",
+                        config={"scrollZoom": False})
     with right:
-        st.markdown("**Uncertainty-aware agent**")
-        sel = C.render_ua_feed(alerts, step, "e_alert_sel", max_items=6)
-        st.divider()
-        st.markdown("**Agent advisory**")
-        if sel is None:
-            st.caption("Select an alert once raised to see the advisory.")
-        else:
-            C.render_advisory(sel, mode)
+        with st.container(height=500):
+            st.markdown("**Uncertainty-aware agent**")
+            sel = C.render_ua_feed(alerts, step, "e_alert_sel", max_items=6)
+            st.divider()
+            st.markdown("**Agent advisory**")
+            if sel is None:
+                st.caption("Select an alert once raised to see the advisory.")
+            else:
+                C.render_advisory(sel, mode)
+
+
+def _on_slider() -> None:
+    st.session_state.e_step = st.session_state.e_slider
 
 
 def show() -> None:
@@ -255,16 +264,17 @@ def show() -> None:
         ss.e_playing = not ss.e_playing
     if c[1].button("Restart", key="e_restart"):
         ss.e_step, ss.e_playing = 0, False
-    ss.e_step = min(
-        c[2].slider("Replay hour", 0, len(df) - 1,
-                    min(int(ss.e_step), len(df) - 1), key="e_slider"),
-        len(df) - 1)
+    ss.e_step = max(0, min(int(ss.e_step), len(df) - 1))
+    ss.e_slider = int(ss.e_step)
+    c[2].slider("Replay hour", 0, len(df) - 1,
+                key="e_slider", on_change=_on_slider)
     ss.e_speed = c[3].selectbox("h / tick", [4, 24, 48],
                                 index=[4, 24, 48].index(ss.e_speed)
                                 if ss.e_speed in [4, 24, 48] else 1,
                                 key="e_speed_sel")
 
-    _live(df, alerts, metrics, mode_override, extra)
+    st.fragment(run_every=1.0 if ss.e_playing else None)(_live)(
+        df, alerts, metrics, mode_override, extra)
 
     st.subheader("Does the stated 90% hold as conditions drift?")
     st.caption(
@@ -272,5 +282,6 @@ def show() -> None:
         "un-calibrated model band and the static CQR band drift with the "
         "weather regime; online adaptive conformal keeps the stated level."
     )
-    st.plotly_chart(_rollcov_fig(df_full), use_container_width=True)
+    st.plotly_chart(_rollcov_fig(df_full), use_container_width=True,
+                    key="e_rollcov_chart", config={"scrollZoom": False})
     C.footer()

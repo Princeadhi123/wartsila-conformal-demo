@@ -15,6 +15,8 @@ _SENSORS = {"T48": "HP turbine exit temp T48, °C", "T2": "Compressor outlet tem
             "P2": "Compressor outlet pressure P2, bar", "mf": "Fuel flow, kg/s"}
 _YRANGES = {"kMc": [0.955, 1.005], "kMt": [0.972, 1.004]}
 _WINDOW = 240
+_TRANSPARENT = "rgba(0,0,0,0)"
+_GRID_COLOR = "rgba(255,255,255,0.08)"
 
 
 def _state_at(row, target: str) -> str:
@@ -28,17 +30,55 @@ def _state_at(row, target: str) -> str:
 def _spark(title: str, x, y, height: int = 150) -> go.Figure:
     fig = go.Figure(go.Scatter(
         x=x, y=y, mode="lines",
-        line=dict(color=C.COLORS["band_line"], width=1.4)))
+        line={"color": C.COLORS["band_line"], "width": 1.4}))
     fig.update_layout(
-        title=dict(text=title, font=dict(size=12, color="#8FA6BC")),
-        height=height, margin=dict(l=10, r=10, t=30, b=10),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#8FA6BC"), showlegend=False,
-        yaxis=dict(autorange=True),
+        title={"text": title, "font": {"size": 12, "color": "#8FA6BC"}},
+        height=height, margin={"l": 10, "r": 10, "t": 30, "b": 10},
+        paper_bgcolor=_TRANSPARENT, plot_bgcolor=_TRANSPARENT,
+        font={"color": "#8FA6BC"}, showlegend=False,
+        yaxis={"autorange": True}, uirevision=title,
     )
-    fig.update_xaxes(gridcolor="rgba(255,255,255,0.08)", showticklabels=False)
-    fig.update_yaxes(gridcolor="rgba(255,255,255,0.08)", nticks=3)
+    fig.update_xaxes(gridcolor=_GRID_COLOR, showticklabels=False)
+    fig.update_yaxes(gridcolor=_GRID_COLOR, nticks=3)
     return fig
+
+
+def _add_alert_markers(fig: go.Figure, ua: list[dict], naive: list[dict],
+                       target: str, row: int, xset: set,
+                       legend_done: set) -> None:
+    kind_prefix = "compressor" if target == "kMc" else "turbine"
+    for state, col, lname in (
+        ("watch", C.COLORS["watch"], "UA watch"),
+        ("confirmed", C.COLORS["confirmed"], "UA confirmed"),
+    ):
+        pts = [a for a in ua if a["kind"].startswith(kind_prefix)
+               and a["state"] == state and a["step"] in xset]
+        if pts:
+            fig.add_trace(
+                go.Scatter(
+                    x=[a["step"] for a in pts],
+                    y=[a["estimate"] for a in pts], mode="markers",
+                    marker={"symbol": "diamond", "size": 13, "color": col,
+                            "line": {"color": "#0B1B2B", "width": 1.5}},
+                    name=lname, legendgroup=lname,
+                    showlegend=lname not in legend_done),
+                row=row, col=1)
+            legend_done.add(lname)
+    pts = [a for a in naive if a["kind"].startswith(kind_prefix)
+           and a["step"] in xset]
+    if pts:
+        fig.add_trace(
+            go.Scatter(
+                x=[a["step"] for a in pts],
+                y=[a["estimate"] for a in pts], mode="markers",
+                marker={"symbol": "triangle-up", "size": 13,
+                        "color": C.COLORS["confirmed"],
+                        "line": {"color": "#0B1B2B", "width": 1.5}},
+                name="conventional alarm", legendgroup="naive",
+                showlegend="naive" not in legend_done,
+                hovertext="conventional alarm"),
+            row=row, col=1)
+        legend_done.add("naive")
 
 
 def _main_fig(win: pd.DataFrame, ua: list[dict], naive: list[dict],
@@ -57,14 +97,14 @@ def _main_fig(win: pd.DataFrame, ua: list[dict], naive: list[dict],
                 x=x + x[::-1],
                 y=list(win[f"{target}_hi"]) + list(win[f"{target}_lo"])[::-1],
                 fill="toself", fillcolor=C.COLORS["band"],
-                line=dict(width=0), hoverinfo="skip",
+                line={"width": 0}, hoverinfo="skip",
                 name="90% conformal band", legendgroup="band",
                 showlegend="band" not in legend_done),
             row=i, col=1)
         legend_done.add("band")
         fig.add_trace(
             go.Scatter(x=x, y=win[f"{target}_mu"], mode="lines",
-                       line=dict(color=C.COLORS["band_line"], width=1.2),
+                       line={"color": C.COLORS["band_line"], "width": 1.2},
                        name="ensemble estimate", legendgroup="est",
                        showlegend="est" not in legend_done),
             row=i, col=1)
@@ -72,8 +112,8 @@ def _main_fig(win: pd.DataFrame, ua: list[dict], naive: list[dict],
         if truth:
             fig.add_trace(
                 go.Scatter(x=x, y=win[target], mode="lines",
-                           line=dict(color=C.COLORS["healthy"], width=1.5,
-                                     dash="dot"),
+                           line={"color": C.COLORS["healthy"], "width": 1.5,
+                                 "dash": "dot"},
                            name="ground truth (simulator)",
                            legendgroup="truth",
                            showlegend="truth" not in legend_done),
@@ -81,40 +121,7 @@ def _main_fig(win: pd.DataFrame, ua: list[dict], naive: list[dict],
             legend_done.add("truth")
         fig.add_hline(y=thresholds[target], line_dash="dash",
                       line_color=C.COLORS["accent"], row=i, col=1)
-
-        kind_prefix = "compressor" if target == "kMc" else "turbine"
-        for state, col, lname in (
-            ("watch", C.COLORS["watch"], "UA watch"),
-            ("confirmed", C.COLORS["confirmed"], "UA confirmed"),
-        ):
-            pts = [a for a in ua if a["kind"].startswith(kind_prefix)
-                   and a["state"] == state and a["step"] in xset]
-            if pts:
-                fig.add_trace(
-                    go.Scatter(
-                        x=[a["step"] for a in pts],
-                        y=[a["estimate"] for a in pts], mode="markers",
-                        marker=dict(symbol="diamond", size=13, color=col,
-                                    line=dict(color="#0B1B2B", width=1.5)),
-                        name=lname, legendgroup=lname,
-                        showlegend=lname not in legend_done),
-                    row=i, col=1)
-                legend_done.add(lname)
-        pts = [a for a in naive if a["kind"].startswith(kind_prefix)
-               and a["step"] in xset]
-        if pts:
-            fig.add_trace(
-                go.Scatter(
-                    x=[a["step"] for a in pts],
-                    y=[a["estimate"] for a in pts], mode="markers",
-                    marker=dict(symbol="triangle-up", size=13,
-                                color=C.COLORS["confirmed"],
-                                line=dict(color="#0B1B2B", width=1.5)),
-                    name="conventional alarm", legendgroup="naive",
-                    showlegend="naive" not in legend_done,
-                    hovertext="conventional alarm"),
-                row=i, col=1)
-            legend_done.add("naive")
+        _add_alert_markers(fig, ua, naive, target, i, xset, legend_done)
     if wash_step is not None:
         for i in (1, 2):
             fig.add_vline(x=wash_step, line_dash="dot",
@@ -128,24 +135,24 @@ def _main_fig(win: pd.DataFrame, ua: list[dict], naive: list[dict],
         if lname not in legend_done:
             fig.add_trace(
                 go.Scatter(x=[], y=[], mode="markers",
-                           marker=dict(symbol=sym, size=13, color=col,
-                                       line=dict(color="#0B1B2B", width=1.5)),
+                           marker={"symbol": sym, "size": 13, "color": col,
+                                   "line": {"color": "#0B1B2B", "width": 1.5}},
                            name=lname, showlegend=True),
                 row=1, col=1)
     fig.update_layout(
-        height=560, margin=dict(l=10, r=10, t=95, b=10),
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#E8EEF4"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+        height=560, margin={"l": 10, "r": 10, "t": 95, "b": 10},
+        paper_bgcolor=_TRANSPARENT, plot_bgcolor=_TRANSPARENT,
+        font={"color": "#E8EEF4"},
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0},
+        uirevision="marine-main",
     )
-    fig.update_xaxes(gridcolor="rgba(255,255,255,0.08)")
+    fig.update_xaxes(gridcolor=_GRID_COLOR)
     for i, target in enumerate(_TARGETS, start=1):
-        fig.update_yaxes(gridcolor="rgba(255,255,255,0.08)",
+        fig.update_yaxes(gridcolor=_GRID_COLOR,
                          range=_YRANGES[target], row=i, col=1)
     return fig
 
 
-@st.fragment(run_every=1.0)
 def _live(voy, metrics, ua, naive, fuel_price, mode_override, extra):
     ss = st.session_state
     max_step = len(voy) - 1
@@ -153,6 +160,7 @@ def _live(voy, metrics, ua, naive, fuel_price, mode_override, extra):
         ss.m_step = min(ss.m_step + ss.m_speed, max_step)
         if ss.m_step >= max_step:
             ss.m_playing = False
+            st.rerun()
     step = int(ss.m_step)
     row = voy.iloc[step]
 
@@ -189,7 +197,8 @@ def _live(voy, metrics, ua, naive, fuel_price, mode_override, extra):
         st.plotly_chart(
             _main_fig(win, ua, naive, ss.m_truth, wash_step,
                       metrics["thresholds"]),
-            use_container_width=True,
+            use_container_width=True, key="m_main_chart",
+            config={"scrollZoom": False},
         )
         st.caption(
             "The conformal band widens at low ship speed — the health state "
@@ -198,18 +207,25 @@ def _live(voy, metrics, ua, naive, fuel_price, mode_override, extra):
         cols = st.columns(4)
         for col, (sensor, label) in zip(cols, _SENSORS.items()):
             col.plotly_chart(_spark(label, win["step"], win[sensor]),
-                             use_container_width=True)
+                             use_container_width=True,
+                             key=f"m_spark_{sensor}",
+                             config={"scrollZoom": False})
     with right:
-        st.markdown("**Conventional alarms (point estimate)**")
-        C.render_naive_feed(naive, step, ss.m_truth)
-        st.markdown("**Uncertainty-aware agent**")
-        sel = C.render_ua_feed(ua, step, "m_alert_sel")
-        st.divider()
-        st.markdown("**Agent advisory**")
-        if sel is None:
-            st.caption("Select an alert once raised to see the advisory.")
-        else:
-            C.render_advisory(sel, mode)
+        with st.container(height=760):
+            st.markdown("**Conventional alarms (point estimate)**")
+            C.render_naive_feed(naive, step, ss.m_truth)
+            st.markdown("**Uncertainty-aware agent**")
+            sel = C.render_ua_feed(ua, step, "m_alert_sel")
+            st.divider()
+            st.markdown("**Agent advisory**")
+            if sel is None:
+                st.caption("Select an alert once raised to see the advisory.")
+            else:
+                C.render_advisory(sel, mode)
+
+
+def _on_slider() -> None:
+    st.session_state.m_step = st.session_state.m_slider
 
 
 def show() -> None:
@@ -266,8 +282,10 @@ def show() -> None:
         ss.m_step = min(a["step"] for a in ua)
     if c[3].button("Jump to wash", key="m_wash"):
         ss.m_step = 560
-    ss.m_step = c[4].slider("Voyage hour", 0, len(voy) - 1, int(ss.m_step),
-                            key="m_slider")
+    ss.m_step = max(0, min(int(ss.m_step), len(voy) - 1))
+    ss.m_slider = int(ss.m_step)
+    c[4].slider("Voyage hour", 0, len(voy) - 1,
+                key="m_slider", on_change=_on_slider)
     ss.m_speed = c[5].selectbox("h / tick", [1, 4, 12],
                                 index=[1, 4, 12].index(ss.m_speed),
                                 key="m_speed_sel")
@@ -277,5 +295,6 @@ def show() -> None:
         ss.m_full = st.toggle("Full history", value=ss.m_full,
                               key="m_full_t")
 
-    _live(voy, metrics, ua, naive, fuel_price, mode_override, extra)
+    st.fragment(run_every=1.0 if ss.m_playing else None)(_live)(
+        voy, metrics, ua, naive, fuel_price, mode_override, extra)
     C.footer()
